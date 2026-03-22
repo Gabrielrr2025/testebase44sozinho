@@ -1,10 +1,10 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { createPageUrl } from "@/utils";
 
+// Dashboard redirect to Products
 export default function Dashboard() {
-  const navigate = useNavigate();
   React.useEffect(() => {
-    navigate('/Products');
+    window.location.replace(createPageUrl("Products"));
   }, []);
 
   return (
