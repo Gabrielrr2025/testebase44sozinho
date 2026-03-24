@@ -362,7 +362,6 @@ app.post('/api/planejamento/dados', async (req, res) => {
       ORDER BY pp.nome
     `;
 
-    -- Calcular suggested_production baseado em avg_sales
     const produtosComSugestao = produtos.map(p => ({
       ...p,
       avg_sales: parseFloat(p.avg_sales || 0).toFixed(1),
