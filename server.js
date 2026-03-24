@@ -116,7 +116,7 @@ app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
       ORDER BY v.produto_descricao
       LIMIT 500
     `;
-    res.json({ sales: result, losses: [] });
+    res.json({ sales: result, salesData: result, losses: [], lossData: [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
