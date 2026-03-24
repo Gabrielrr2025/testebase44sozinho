@@ -25,10 +25,6 @@ app.get('/api/diagnostico', async (req, res) => {
   }
 });
 
-// ==========================================
-// PRODUTOS PLATAFORMA (cadastrados pelo usuário)
-// ==========================================
-
 app.get('/api/produtos', async (req, res) => {
   try {
     const sql = getDB();
@@ -51,7 +47,7 @@ app.get('/api/produtos', async (req, res) => {
 app.post('/api/produtos/criar', async (req, res) => {
   try {
     const sql = getDB();
-    const { code, name, sector, unit, recipe_yield, production_days, 
+    const { code, name, sector, unit, recipe_yield, production_days,
             horario_producao, horario_venda, produto_lince_codigo } = req.body;
     const result = await sql`
       INSERT INTO produtos_plataforma 
@@ -99,18 +95,17 @@ app.post('/api/produtos/deletar', async (req, res) => {
   }
 });
 
-// Produtos do Lince ainda não cadastrados na plataforma
 app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
   try {
     const sql = getDB();
     const result = await sql`
       SELECT DISTINCT 
-        v.produto_codigo as codigo,
+        v.produto_codigo::text as codigo,
         v.produto_descricao as nome,
         v.departamento_descricao as setor,
         COUNT(*) as total_registros,
-        SUM(CASE WHEN v.valor_total > 0 THEN v.quantidade ELSE 0 END) as total_vendas,
-        SUM(CASE WHEN v.valor_total = 0 THEN v.quantidade ELSE 0 END) as total_perdas
+        SUM(v.quantidade) as total_vendas,
+        0 as total_perdas
       FROM vendas v
       WHERE NOT EXISTS (
         SELECT 1 FROM produtos_plataforma pp 
@@ -121,7 +116,7 @@ app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
       ORDER BY v.produto_descricao
       LIMIT 500
     `;
-    res.json({ products: result });
+    res.json({ sales: result, losses: [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -143,7 +138,7 @@ app.get('/api/produtos/catalogo', async (req, res) => {
 app.post('/api/produtos/precos', async (req, res) => {
   try {
     const sql = getDB();
-    const { id, preco } = req.body;
+    const { id } = req.body;
     const result = await sql`
       UPDATE produtos_plataforma SET atualizado_em=NOW() WHERE id=${id} RETURNING *
     `;
@@ -152,10 +147,6 @@ app.post('/api/produtos/precos', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// ==========================================
-// VENDAS
-// ==========================================
 
 app.post('/api/vendas', async (req, res) => {
   try {
@@ -186,10 +177,6 @@ app.post('/api/vendas', async (req, res) => {
   }
 });
 
-// ==========================================
-// PERDAS
-// ==========================================
-
 app.post('/api/perdas', async (req, res) => {
   try {
     const sql = getDB();
@@ -204,10 +191,6 @@ app.post('/api/perdas', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// ==========================================
-// RELATÓRIOS
-// ==========================================
 
 app.post('/api/relatorio/vendas', async (req, res) => {
   try {
@@ -300,10 +283,6 @@ app.post('/api/relatorio/multiperiodo', async (req, res) => {
   res.json({ periodos: [] });
 });
 
-// ==========================================
-// DASHBOARD
-// ==========================================
-
 app.post('/api/dashboard', async (req, res) => {
   try {
     const sql = getDB();
@@ -318,10 +297,6 @@ app.post('/api/dashboard', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// ==========================================
-// PLANEJAMENTO
-// ==========================================
 
 app.post('/api/planejamento/dados', async (req, res) => {
   try {
@@ -410,10 +385,6 @@ app.post('/api/planejamento/debug', async (req, res) => {
 app.get('/api/semana/atual', (req, res) => {
   res.json({ data: new Date().toISOString().split('T')[0] });
 });
-
-// ==========================================
-// CONFIG
-// ==========================================
 
 app.get('/api/config', async (req, res) => {
   try {
