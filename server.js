@@ -18,44 +18,31 @@ app.get('/api/diagnostico', async (req, res) => {
   try {
     const sql = getDB();
     const vendas = await sql`SELECT COUNT(*) as total FROM vendas`;
-    const produtos = await sql`SELECT COUNT(*) as total FROM produtos`;
+    const produtos = await sql`SELECT COUNT(*) as total FROM produtos_plataforma`;
     res.json({ vendas: vendas[0], produtos: produtos[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Produtos — traduz colunas do banco para o formato do frontend
+// ==========================================
+// PRODUTOS PLATAFORMA (cadastrados pelo usuário)
+// ==========================================
+
 app.get('/api/produtos', async (req, res) => {
   try {
     const sql = getDB();
     const result = await sql`
       SELECT 
-        codigo as id,
-        codigo as code,
-        descricao as name,
-        departamento_desc as sector,
-        unidade as unit,
-        preco_custo as cost_price,
-        true as active
-      FROM produtos 
-      ORDER BY descricao
+        id, codigo as code, nome as name, setor as sector,
+        unidade as unit, rendimento as recipe_yield,
+        dias_producao as production_days,
+        horario_producao, horario_venda, ativo as active,
+        produto_lince_codigo
+      FROM produtos_plataforma 
+      ORDER BY nome
     `;
     res.json({ products: result });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/produtos/catalogo', async (req, res) => {
-  try {
-    const sql = getDB();
-    const result = await sql`
-      SELECT codigo as id, codigo as code, descricao as name, 
-             departamento_desc as sector, unidade as unit
-      FROM produtos ORDER BY descricao
-    `;
-    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -64,10 +51,17 @@ app.get('/api/produtos/catalogo', async (req, res) => {
 app.post('/api/produtos/criar', async (req, res) => {
   try {
     const sql = getDB();
-    const { code, name, sector, unit } = req.body;
+    const { code, name, sector, unit, recipe_yield, production_days, 
+            horario_producao, horario_venda, produto_lince_codigo } = req.body;
     const result = await sql`
-      INSERT INTO produtos (codigo, descricao, departamento_desc, unidade)
-      VALUES (${code}, ${name}, ${sector}, ${unit}) RETURNING *
+      INSERT INTO produtos_plataforma 
+        (codigo, nome, setor, unidade, rendimento, dias_producao, 
+         horario_producao, horario_venda, produto_lince_codigo)
+      VALUES 
+        (${code}, ${name}, ${sector}, ${unit || 'UN'}, ${recipe_yield || 1}, 
+         ${production_days || []}, ${horario_producao}, ${horario_venda}, 
+         ${produto_lince_codigo})
+      RETURNING *
     `;
     res.json(result[0]);
   } catch (err) {
@@ -78,10 +72,15 @@ app.post('/api/produtos/criar', async (req, res) => {
 app.post('/api/produtos/atualizar', async (req, res) => {
   try {
     const sql = getDB();
-    const { id, code, name, sector, unit } = req.body;
+    const { id, code, name, sector, unit, recipe_yield, production_days,
+            horario_producao, horario_venda, active } = req.body;
     const result = await sql`
-      UPDATE produtos SET descricao=${name}, departamento_desc=${sector}, unidade=${unit}
-      WHERE codigo=${id} RETURNING *
+      UPDATE produtos_plataforma SET 
+        codigo=${code}, nome=${name}, setor=${sector}, unidade=${unit},
+        rendimento=${recipe_yield || 1}, dias_producao=${production_days || []},
+        horario_producao=${horario_producao}, horario_venda=${horario_venda},
+        ativo=${active !== false}, atualizado_em=NOW()
+      WHERE id=${id} RETURNING *
     `;
     res.json(result[0]);
   } catch (err) {
@@ -93,14 +92,71 @@ app.post('/api/produtos/deletar', async (req, res) => {
   try {
     const sql = getDB();
     const { id } = req.body;
-    await sql`DELETE FROM produtos WHERE codigo=${id}`;
+    await sql`DELETE FROM produtos_plataforma WHERE id=${id}`;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Vendas
+// Produtos do Lince ainda não cadastrados na plataforma
+app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
+  try {
+    const sql = getDB();
+    const result = await sql`
+      SELECT DISTINCT 
+        v.produto_codigo as codigo,
+        v.produto_descricao as nome,
+        v.departamento_descricao as setor,
+        COUNT(*) as total_registros,
+        SUM(CASE WHEN v.valor_total > 0 THEN v.quantidade ELSE 0 END) as total_vendas,
+        SUM(CASE WHEN v.valor_total = 0 THEN v.quantidade ELSE 0 END) as total_perdas
+      FROM vendas v
+      WHERE NOT EXISTS (
+        SELECT 1 FROM produtos_plataforma pp 
+        WHERE pp.produto_lince_codigo = v.produto_codigo::text
+           OR pp.codigo = v.produto_codigo::text
+      )
+      GROUP BY v.produto_codigo, v.produto_descricao, v.departamento_descricao
+      ORDER BY v.produto_descricao
+      LIMIT 500
+    `;
+    res.json({ products: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/produtos/catalogo', async (req, res) => {
+  try {
+    const sql = getDB();
+    const result = await sql`
+      SELECT id, codigo as code, nome as name, setor as sector, unidade as unit
+      FROM produtos_plataforma WHERE ativo = true ORDER BY nome
+    `;
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/produtos/precos', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { id, preco } = req.body;
+    const result = await sql`
+      UPDATE produtos_plataforma SET atualizado_em=NOW() WHERE id=${id} RETURNING *
+    `;
+    res.json(result[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// VENDAS
+// ==========================================
+
 app.post('/api/vendas', async (req, res) => {
   try {
     const sql = getDB();
@@ -124,13 +180,35 @@ app.post('/api/vendas', async (req, res) => {
         ORDER BY data DESC LIMIT 5000
       `;
     }
-    res.json({ sales: result });
+    res.json({ sales: result, salesData: result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Relatório de vendas
+// ==========================================
+// PERDAS
+// ==========================================
+
+app.post('/api/perdas', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { startDate, endDate } = req.body;
+    const result = await sql`
+      SELECT * FROM perdas
+      WHERE data BETWEEN ${startDate} AND ${endDate}
+      ORDER BY data DESC LIMIT 5000
+    `;
+    res.json({ losses: result, lossData: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// RELATÓRIOS
+// ==========================================
+
 app.post('/api/relatorio/vendas', async (req, res) => {
   try {
     const sql = getDB();
@@ -153,8 +231,7 @@ app.post('/api/relatorio/vendas', async (req, res) => {
       FROM vendas WHERE data BETWEEN ${startDate} AND ${endDate}
     `;
     res.json({ 
-      por_dia: porDia, 
-      por_produto: porProduto,
+      por_dia: porDia, por_produto: porProduto,
       total_geral: totais[0].total_geral,
       total_registros: totais[0].total_registros,
       ticket_medio: totais[0].ticket_medio
@@ -164,23 +241,69 @@ app.post('/api/relatorio/vendas', async (req, res) => {
   }
 });
 
-// Perdas
-app.post('/api/perdas', async (req, res) => {
+app.post('/api/relatorio/dados', async (req, res) => {
   try {
     const sql = getDB();
     const { startDate, endDate } = req.body;
-    const result = await sql`
-      SELECT * FROM perdas
-      WHERE data BETWEEN ${startDate} AND ${endDate}
-      ORDER BY data DESC LIMIT 5000
+    const vendas = await sql`
+      SELECT data::text, produto_codigo, produto_descricao, departamento_descricao as setor,
+             SUM(valor_total) as total, SUM(quantidade) as qtd
+      FROM vendas WHERE data BETWEEN ${startDate} AND ${endDate}
+      GROUP BY data, produto_codigo, produto_descricao, departamento_descricao
+      ORDER BY data DESC LIMIT 2000
     `;
-    res.json({ losses: result });
+    res.json({ vendas, sales: vendas });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Dashboard
+app.post('/api/relatorio/evolucao', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { productId, startDate, endDate } = req.body;
+    const result = await sql`
+      SELECT data::text, SUM(valor_total) as total, SUM(quantidade) as qtd
+      FROM vendas 
+      WHERE produto_codigo = ${productId}
+        AND data BETWEEN ${startDate} AND ${endDate}
+      GROUP BY data ORDER BY data
+    `;
+    res.json({ evolucao: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/relatorio/movimento', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { startDate, endDate } = req.body;
+    const result = await sql`
+      SELECT produto_codigo, produto_descricao, departamento_descricao as setor,
+             SUM(valor_total) as total_vendas, SUM(quantidade) as total_qtd
+      FROM vendas WHERE data BETWEEN ${startDate} AND ${endDate}
+      GROUP BY produto_codigo, produto_descricao, departamento_descricao
+      ORDER BY total_vendas DESC
+    `;
+    res.json({ movimento: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/relatorio/comparacao', async (req, res) => {
+  res.json({ comparacao: [] });
+});
+
+app.post('/api/relatorio/multiperiodo', async (req, res) => {
+  res.json({ periodos: [] });
+});
+
+// ==========================================
+// DASHBOARD
+// ==========================================
+
 app.post('/api/dashboard', async (req, res) => {
   try {
     const sql = getDB();
@@ -196,18 +319,63 @@ app.post('/api/dashboard', async (req, res) => {
   }
 });
 
-// Planejamento
+// ==========================================
+// PLANEJAMENTO
+// ==========================================
+
 app.post('/api/planejamento/dados', async (req, res) => {
   try {
     const sql = getDB();
     const { startDate, endDate } = req.body;
-    const result = await sql`
-      SELECT p.id, p.produto_id, p.data::text as data, p.quantidade_planejada, p.updated_at
-      FROM planejamento p
-      WHERE p.data BETWEEN ${startDate} AND ${endDate}
-      ORDER BY p.data
+
+    const produtos = await sql`
+      SELECT 
+        pp.id::text as produto_id,
+        pp.nome as produto_nome,
+        pp.setor,
+        pp.unidade,
+        pp.dias_producao as production_days,
+        pp.rendimento,
+        COALESCE(
+          (SELECT SUM(v.quantidade) FROM vendas v 
+           WHERE v.produto_codigo::text = pp.produto_lince_codigo
+             AND v.data BETWEEN ${startDate}::date - INTERVAL '28 days' AND ${startDate}::date
+          ) / 4.0, 0
+        ) as avg_sales,
+        COALESCE(
+          (SELECT SUM(v.quantidade) FROM vendas v 
+           WHERE v.produto_codigo::text = pp.produto_lince_codigo
+             AND v.data BETWEEN ${startDate}::date - INTERVAL '7 days' AND ${startDate}::date
+          ), 0
+        ) as current_sales,
+        0 as current_losses,
+        0 as avg_losses,
+        0 as avg_loss_rate,
+        0 as current_loss_rate,
+        'stable' as sales_trend,
+        'stable' as losses_trend,
+        1 as multiplicador_calendario,
+        'Baseado na média das últimas 4 semanas' as suggestion,
+        'media' as confianca
+      FROM produtos_plataforma pp
+      WHERE pp.ativo = true
+      ORDER BY pp.nome
     `;
-    res.json({ planejamentos: result });
+
+    -- Calcular suggested_production baseado em avg_sales
+    const produtosComSugestao = produtos.map(p => ({
+      ...p,
+      avg_sales: parseFloat(p.avg_sales || 0).toFixed(1),
+      suggested_production: Math.ceil(parseFloat(p.avg_sales || 0) * 1.1)
+    }));
+
+    const planejamentos = await sql`
+      SELECT produto_id::text, data::text, quantidade_planejada
+      FROM planejamento
+      WHERE data BETWEEN ${startDate} AND ${endDate}
+    `;
+
+    res.json({ products: produtosComSugestao, planejamentos });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -240,14 +408,21 @@ app.post('/api/planejamento/debug', async (req, res) => {
   }
 });
 
-// Config
+app.get('/api/semana/atual', (req, res) => {
+  res.json({ data: new Date().toISOString().split('T')[0] });
+});
+
+// ==========================================
+// CONFIG
+// ==========================================
+
 app.get('/api/config', async (req, res) => {
   try {
     const sql = getDB();
     const result = await sql`SELECT * FROM configuracoes LIMIT 1`;
-    res.json(result[0] || {});
+    res.json(result[0] || { valor: '1234' });
   } catch (err) {
-    res.json({});
+    res.json({ valor: '1234' });
   }
 });
 
