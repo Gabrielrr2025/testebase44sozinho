@@ -353,6 +353,15 @@ app.post('/api/planejamento/dados', async (req, res) => {
     const { startDate, endDate } = req.body;
 
     const produtos = await sql`
+      WITH ref AS (
+        SELECT
+          -- Semana passada completa: terça a segunda
+          (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '6 days')::date AS sem_inicio,
+          (DATE_TRUNC('week', CURRENT_DATE))::date                      AS sem_fim,
+          -- Últimas 4 semanas: 4 terças atrás até segunda passada
+          (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '34 days')::date AS avg_inicio,
+          (DATE_TRUNC('week', CURRENT_DATE))::date                      AS avg_fim
+      )
       SELECT 
         pp.id::text as produto_id,
         pp.nome as produto_nome,
@@ -363,25 +372,25 @@ app.post('/api/planejamento/dados', async (req, res) => {
         COALESCE(
           (SELECT SUM(v.quantidade) FROM vendas v 
            WHERE v.produto_codigo::text = pp.produto_lince_codigo
-             AND v.data BETWEEN ${startDate}::date - INTERVAL '28 days' AND ${startDate}::date
+             AND v.data BETWEEN (SELECT avg_inicio FROM ref) AND (SELECT avg_fim FROM ref)
           ) / 4.0, 0
         ) as avg_sales,
         COALESCE(
           (SELECT SUM(v.quantidade) FROM vendas v 
            WHERE v.produto_codigo::text = pp.produto_lince_codigo
-             AND v.data BETWEEN ${startDate}::date - INTERVAL '7 days' AND ${startDate}::date
+             AND v.data BETWEEN (SELECT sem_inicio FROM ref) AND (SELECT sem_fim FROM ref)
           ), 0
         ) as current_sales,
         COALESCE(
           (SELECT SUM(p.quantidade) FROM perdas p
            WHERE p.produto_codigo::text = pp.produto_lince_codigo
-             AND p.data BETWEEN ${startDate}::date - INTERVAL '7 days' AND ${startDate}::date
+             AND p.data BETWEEN (SELECT sem_inicio FROM ref) AND (SELECT sem_fim FROM ref)
           ), 0
         ) as current_losses,
         COALESCE(
           (SELECT SUM(p.quantidade) FROM perdas p
            WHERE p.produto_codigo::text = pp.produto_lince_codigo
-             AND p.data BETWEEN ${startDate}::date - INTERVAL '28 days' AND ${startDate}::date
+             AND p.data BETWEEN (SELECT avg_inicio FROM ref) AND (SELECT avg_fim FROM ref)
           ) / 4.0, 0
         ) as avg_losses,
         0 as avg_loss_rate,
@@ -389,7 +398,7 @@ app.post('/api/planejamento/dados', async (req, res) => {
         'stable' as sales_trend,
         'stable' as losses_trend,
         1 as multiplicador_calendario,
-        'Baseado na média das últimas 4 semanas' as suggestion,
+        'Baseado na média das últimas 4 semanas (ter-seg)' as suggestion,
         'media' as confianca
       FROM produtos_plataforma pp
       WHERE pp.ativo = true
