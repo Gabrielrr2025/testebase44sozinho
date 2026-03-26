@@ -98,22 +98,42 @@ app.post('/api/produtos/deletar', async (req, res) => {
 app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
   try {
     const sql = getDB();
-    const result = await sql`
-      SELECT DISTINCT 
-        v.produto_codigo::text as product_code,
-        v.produto_descricao as product_name,
-        v.departamento_descricao as sector,
-        SUM(v.quantidade) as quantity
-      FROM vendas v
-      WHERE NOT EXISTS (
-        SELECT 1 FROM produtos_plataforma pp 
-        WHERE pp.produto_lince_codigo = v.produto_codigo::text
-           OR pp.codigo = v.produto_codigo::text
-      )
-      GROUP BY v.produto_codigo, v.produto_descricao, v.departamento_descricao
-      ORDER BY v.produto_descricao
-      LIMIT 500
-    `;
+    const { sector } = req.query;
+    let result;
+    if (sector && sector !== 'all') {
+      result = await sql`
+        SELECT DISTINCT 
+          v.produto_codigo::text as product_code,
+          v.produto_descricao as product_name,
+          v.departamento_descricao as sector,
+          SUM(v.quantidade) as quantity
+        FROM vendas v
+        WHERE v.departamento_descricao = ${sector}
+          AND NOT EXISTS (
+            SELECT 1 FROM produtos_plataforma pp 
+            WHERE pp.produto_lince_codigo = v.produto_codigo::text
+               OR pp.codigo = v.produto_codigo::text
+          )
+        GROUP BY v.produto_codigo, v.produto_descricao, v.departamento_descricao
+        ORDER BY v.produto_descricao
+      `;
+    } else {
+      result = await sql`
+        SELECT DISTINCT 
+          v.produto_codigo::text as product_code,
+          v.produto_descricao as product_name,
+          v.departamento_descricao as sector,
+          SUM(v.quantidade) as quantity
+        FROM vendas v
+        WHERE NOT EXISTS (
+          SELECT 1 FROM produtos_plataforma pp 
+          WHERE pp.produto_lince_codigo = v.produto_codigo::text
+             OR pp.codigo = v.produto_codigo::text
+        )
+        GROUP BY v.produto_codigo, v.produto_descricao, v.departamento_descricao
+        ORDER BY v.produto_descricao
+      `;
+    }
     res.json({ 
       sales: result, 
       salesData: result, 
@@ -162,7 +182,7 @@ app.post('/api/vendas', async (req, res) => {
                departamento_descricao as setor, quantidade
         FROM vendas
         WHERE data BETWEEN ${startDate} AND ${endDate}
-        ORDER BY data DESC LIMIT 5000
+        ORDER BY data DESC LIMIT 50000
       `;
     } else {
       result = await sql`
@@ -171,7 +191,7 @@ app.post('/api/vendas', async (req, res) => {
         FROM vendas
         WHERE data BETWEEN ${startDate} AND ${endDate}
           AND departamento_descricao = ${sector}
-        ORDER BY data DESC LIMIT 5000
+        ORDER BY data DESC LIMIT 50000
       `;
     }
     res.json({ sales: result, salesData: result });
@@ -187,7 +207,7 @@ app.post('/api/perdas', async (req, res) => {
     const result = await sql`
       SELECT * FROM perdas
       WHERE data BETWEEN ${startDate} AND ${endDate}
-      ORDER BY data DESC LIMIT 5000
+      ORDER BY data DESC LIMIT 50000
     `;
     res.json({ losses: result, lossData: result });
   } catch (err) {
