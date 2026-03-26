@@ -10,19 +10,14 @@ import { toast } from "sonner";
 import SectorBadge from "../common/SectorBadge";
 
 const SETORES = [
-  'all',
-  'CONFEITARIA FINA',
-  'CONFEITARIA TRADICIONAL',
-  'ESPACO MAGICO',
-  'FRIOS',
-  'INATIVOS',
-  'KITS',
-  'LANCHONETE',
-  'MINIMERCADO',
-  'PADARIA',
-  'RESTAURANTE',
-  'SALGADOS',
-  'SUPRIMENTOS',
+  { value: 'all', label: 'Todos os setores' },
+  { value: 'CONFEITARIA FINA', label: 'Confeitaria Fina' },
+  { value: 'CONFEITARIA TRADICIONAL', label: 'Confeitaria Tradicional' },
+  { value: 'FRIOS', label: 'Frios' },
+  { value: 'LANCHONETE', label: 'Lanchonete' },
+  { value: 'PADARIA', label: 'Padaria' },
+  { value: 'RESTAURANTE', label: 'Restaurante' },
+  { value: 'SALGADOS', label: 'Salgados' },
 ];
 
 export default function UnmappedProductsSuggestion({ sqlData, products, onProductCreated, selectedSector, onSectorChange }) {
@@ -48,8 +43,7 @@ export default function UnmappedProductsSuggestion({ sqlData, products, onProduc
         const name = normalize(record.product_name || '');
         const code = normalize(record.product_code || '');
         if (!name) return false;
-        const isRegistered = registeredByCode.has(code) || registeredByName.has(name);
-        return !isRegistered;
+        return !registeredByCode.has(code) && !registeredByName.has(name);
       })
       .sort((a, b) => (b.quantity || 0) - (a.quantity || 0));
   }, [sqlData, products]);
@@ -154,13 +148,12 @@ export default function UnmappedProductsSuggestion({ sqlData, products, onProduc
               value={selectedSector || 'all'}
               onValueChange={(v) => { onSectorChange && onSectorChange(v); }}
             >
-              <SelectTrigger className="w-48 border-orange-200" onClick={(e) => e.stopPropagation()}>
+              <SelectTrigger className="w-52 border-orange-200" onClick={(e) => e.stopPropagation()}>
                 <SelectValue placeholder="Filtrar setor" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os setores</SelectItem>
-                {SETORES.filter(s => s !== 'all').map(s => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                {SETORES.map(s => (
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -172,17 +165,12 @@ export default function UnmappedProductsSuggestion({ sqlData, products, onProduc
               const isCreating = creating.has(key);
               return (
                 <div key={idx} className="bg-white border border-orange-200 rounded-lg p-3 flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-slate-900">{product.product_name}</span>
-                      {product.product_code && (
-                        <Badge variant="outline" className="text-xs">{product.product_code}</Badge>
-                      )}
-                      <SectorBadge sector={product.sector} />
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Qtd total: {Math.round((product.quantity || 0) * 100) / 100}
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-900">{product.product_name}</span>
+                    {product.product_code && (
+                      <Badge variant="outline" className="text-xs">{product.product_code}</Badge>
+                    )}
+                    <SectorBadge sector={product.sector} />
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -219,7 +207,9 @@ export default function UnmappedProductsSuggestion({ sqlData, products, onProduc
 
           {visibleProducts.length === 0 && (
             <div className="text-center py-8 text-orange-600">
-              {searchTerm ? `Nenhum produto encontrado para "${searchTerm}"` : 'Todos os produtos deste setor já estão cadastrados!'}
+              {searchTerm
+                ? `Nenhum produto encontrado para "${searchTerm}"`
+                : 'Todos os produtos deste setor já estão cadastrados!'}
             </div>
           )}
         </CardContent>
