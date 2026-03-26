@@ -59,7 +59,7 @@ app.post('/api/produtos/criar', async (req, res) => {
          ${produto_lince_codigo})
       RETURNING *
     `;
-    res.json(result[0]);
+    res.json({ success: true, product: result[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -100,12 +100,10 @@ app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
     const sql = getDB();
     const result = await sql`
       SELECT DISTINCT 
-        v.produto_codigo::text as codigo,
-        v.produto_descricao as nome,
-        v.departamento_descricao as setor,
-        COUNT(*) as total_registros,
-        SUM(v.quantidade) as total_vendas,
-        0 as total_perdas
+        v.produto_codigo::text as product_code,
+        v.produto_descricao as product_name,
+        v.departamento_descricao as sector,
+        SUM(v.quantidade) as quantity
       FROM vendas v
       WHERE NOT EXISTS (
         SELECT 1 FROM produtos_plataforma pp 
@@ -116,7 +114,12 @@ app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
       ORDER BY v.produto_descricao
       LIMIT 500
     `;
-    res.json({ sales: result, salesData: result, losses: [], lossData: [] });
+    res.json({ 
+      sales: result, 
+      salesData: result, 
+      losses: [], 
+      lossData: [] 
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
