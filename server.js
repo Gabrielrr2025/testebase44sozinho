@@ -12,6 +12,8 @@ const getDB = () => {
   return neon(url);
 };
 
+const SETORES_EXCLUIDOS = ['MINIMERCADO', 'SUPRIMENTOS', 'INATIVOS', 'KITS', 'ESPACO MAGICO'];
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 app.get('/api/diagnostico', async (req, res) => {
@@ -99,14 +101,15 @@ app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
   try {
     const sql = getDB();
     const { sector } = req.query;
-    let result;
+
+    let vendas;
     if (sector && sector !== 'all') {
-      result = await sql`
-        SELECT DISTINCT 
+      vendas = await sql`
+        SELECT 
           v.produto_codigo::text as product_code,
           v.produto_descricao as product_name,
           v.departamento_descricao as sector,
-          SUM(v.quantidade) as quantity
+          SUM(v.quantidade) as qty_vendas
         FROM vendas v
         WHERE v.departamento_descricao = ${sector}
           AND NOT EXISTS (
@@ -118,27 +121,50 @@ app.get('/api/produtos/lince-nao-cadastrados', async (req, res) => {
         ORDER BY v.produto_descricao
       `;
     } else {
-      result = await sql`
-        SELECT DISTINCT 
+      vendas = await sql`
+        SELECT 
           v.produto_codigo::text as product_code,
           v.produto_descricao as product_name,
           v.departamento_descricao as sector,
-          SUM(v.quantidade) as quantity
+          SUM(v.quantidade) as qty_vendas
         FROM vendas v
-        WHERE NOT EXISTS (
-          SELECT 1 FROM produtos_plataforma pp 
-          WHERE pp.produto_lince_codigo = v.produto_codigo::text
-             OR pp.codigo = v.produto_codigo::text
+        WHERE v.departamento_descricao NOT IN (
+          'MINIMERCADO', 'SUPRIMENTOS', 'INATIVOS', 'KITS', 'ESPACO MAGICO'
         )
+          AND NOT EXISTS (
+            SELECT 1 FROM produtos_plataforma pp 
+            WHERE pp.produto_lince_codigo = v.produto_codigo::text
+               OR pp.codigo = v.produto_codigo::text
+          )
         GROUP BY v.produto_codigo, v.produto_descricao, v.departamento_descricao
         ORDER BY v.produto_descricao
       `;
     }
+
+    const perdas = await sql`
+      SELECT 
+        p.produto_codigo::text as product_code,
+        SUM(p.quantidade) as qty_perdas
+      FROM perdas p
+      GROUP BY p.produto_codigo
+    `;
+
+    const perdasMap = new Map(perdas.map(p => [p.product_code, parseFloat(p.qty_perdas || 0)]));
+
+    const result = vendas.map(v => ({
+      product_code: v.product_code,
+      product_name: v.product_name,
+      sector: v.sector,
+      quantity: parseFloat(v.qty_vendas || 0),
+      sales: parseFloat(v.qty_vendas || 0),
+      losses: perdasMap.get(v.product_code) || 0
+    }));
+
     res.json({ 
-      sales: result, 
-      salesData: result, 
-      losses: [], 
-      lossData: [] 
+      sales: result,
+      salesData: result,
+      losses: [],
+      lossData: []
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -182,7 +208,7 @@ app.post('/api/vendas', async (req, res) => {
                departamento_descricao as setor, quantidade
         FROM vendas
         WHERE data BETWEEN ${startDate} AND ${endDate}
-        ORDER BY data DESC LIMIT 50000
+        ORDER BY data DESC LIMIT 5000
       `;
     } else {
       result = await sql`
@@ -191,7 +217,7 @@ app.post('/api/vendas', async (req, res) => {
         FROM vendas
         WHERE data BETWEEN ${startDate} AND ${endDate}
           AND departamento_descricao = ${sector}
-        ORDER BY data DESC LIMIT 50000
+        ORDER BY data DESC LIMIT 5000
       `;
     }
     res.json({ sales: result, salesData: result });
@@ -207,7 +233,7 @@ app.post('/api/perdas', async (req, res) => {
     const result = await sql`
       SELECT * FROM perdas
       WHERE data BETWEEN ${startDate} AND ${endDate}
-      ORDER BY data DESC LIMIT 50000
+      ORDER BY data DESC LIMIT 5000
     `;
     res.json({ losses: result, lossData: result });
   } catch (err) {
@@ -346,8 +372,18 @@ app.post('/api/planejamento/dados', async (req, res) => {
              AND v.data BETWEEN ${startDate}::date - INTERVAL '7 days' AND ${startDate}::date
           ), 0
         ) as current_sales,
-        0 as current_losses,
-        0 as avg_losses,
+        COALESCE(
+          (SELECT SUM(p.quantidade) FROM perdas p
+           WHERE p.produto_codigo::text = pp.produto_lince_codigo
+             AND p.data BETWEEN ${startDate}::date - INTERVAL '7 days' AND ${startDate}::date
+          ), 0
+        ) as current_losses,
+        COALESCE(
+          (SELECT SUM(p.quantidade) FROM perdas p
+           WHERE p.produto_codigo::text = pp.produto_lince_codigo
+             AND p.data BETWEEN ${startDate}::date - INTERVAL '28 days' AND ${startDate}::date
+          ) / 4.0, 0
+        ) as avg_losses,
         0 as avg_loss_rate,
         0 as current_loss_rate,
         'stable' as sales_trend,
@@ -363,6 +399,7 @@ app.post('/api/planejamento/dados', async (req, res) => {
     const produtosComSugestao = produtos.map(p => ({
       ...p,
       avg_sales: parseFloat(p.avg_sales || 0).toFixed(1),
+      avg_losses: parseFloat(p.avg_losses || 0).toFixed(1),
       suggested_production: Math.ceil(parseFloat(p.avg_sales || 0) * 1.1)
     }));
 
