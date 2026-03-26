@@ -121,8 +121,10 @@ export default function Planning() {
         startDate,
         endDate
       });
-      return response.data;
-    }
+      return response.data || response;
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 
   // Buscar planejamento salvo
@@ -133,8 +135,10 @@ export default function Planning() {
         startDate,
         endDate
       });
-      return response.data;
-    }
+      return response.data || response;
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 
   // Carregar planejamento salvo no estado
@@ -169,7 +173,7 @@ export default function Planning() {
     }
   });
 
-  const planningData = planningQuery.data?.products || [];
+  const planningData = planningQuery.data?.products || planningQuery.data?.data?.products || [];
 
   // Filtrar por setor e busca
   const filteredPlanning = useMemo(() => {
