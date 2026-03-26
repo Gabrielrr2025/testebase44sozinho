@@ -10,9 +10,8 @@ import * as XLSX from 'xlsx';
 
 export default function Products() {
   const queryClient = useQueryClient();
-  // Tab removida - apenas planejamento
+  const [sqlSector, setSqlSector] = useState('all');
 
-  // Buscar produtos do Neon via function
   const { data: productsData, isLoading } = useQuery({
     queryKey: ['products'],
     queryFn: async () => {
@@ -20,29 +19,23 @@ export default function Products() {
       return response?.data || response;
     },
     staleTime: 5 * 60 * 1000,
-    gcTime:    10 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 
-  // Buscar dados da VIEW SQL para detectar produtos não mapeados
-  const { data: sqlData, error: sqlError, isLoading: sqlLoading } = useQuery({
-    queryKey: ['sqlData'],
+  const { data: sqlData, error: sqlError, isLoading: sqlLoading, refetch: refetchSql } = useQuery({
+    queryKey: ['sqlData', sqlSector],
     queryFn: async () => {
       try {
-        const response = await base44.functions.invoke('fetchSQLData', {});
-
-        // Base44 pode retornar em response direto ou em response.data
+        const response = await base44.functions.invoke('fetchSQLData', { sector: sqlSector });
         const data = response?.data || response || {};
-
         if (data.error) {
           console.warn('fetchSQLData retornou erro:', data.error);
           return { sales: [], losses: [] };
         }
-
         const normalized = {
-          sales:  data.sales  || data.salesData  || [],
-          losses: data.losses || data.lossData   || [],
+          sales: data.sales || data.salesData || [],
+          losses: data.losses || data.lossData || [],
         };
-
         console.log(`✅ sqlData carregado: ${normalized.sales.length} vendas, ${normalized.losses.length} perdas`);
         return normalized;
       } catch (err) {
@@ -50,7 +43,7 @@ export default function Products() {
         return { sales: [], losses: [] };
       }
     },
-    refetchInterval: 5 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
 
   const products = productsData?.products || [];
@@ -58,10 +51,12 @@ export default function Products() {
   const handleRefresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ['products'] });
     await queryClient.invalidateQueries({ queryKey: ['sqlData'] });
-    await queryClient.invalidateQueries({ queryKey: ['planningData'] });
-    await queryClient.invalidateQueries({ queryKey: ['savedPlanning'] });
     await queryClient.refetchQueries({ queryKey: ['products'] });
-    await queryClient.refetchQueries({ queryKey: ['sqlData'] });
+    await queryClient.refetchQueries({ queryKey: ['sqlData', sqlSector] });
+  };
+
+  const handleSectorChange = (sector) => {
+    setSqlSector(sector);
   };
 
   const handleExportExcel = () => {
@@ -75,16 +70,13 @@ export default function Products() {
         'Dias de Produção': (p.production_days || []).join(', '),
         'Ativo': p.active ? 'Sim' : 'Não'
       }));
-
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(excelData);
-
       const colWidths = [
         { wch: 15 }, { wch: 30 }, { wch: 15 },
         { wch: 12 }, { wch: 10 }, { wch: 40 }, { wch: 8 }
       ];
       ws['!cols'] = colWidths;
-
       XLSX.utils.book_append_sheet(wb, ws, 'Produtos');
       const fileName = `produtos_${format(new Date(), 'dd-MM-yyyy')}.xlsx`;
       XLSX.writeFile(wb, fileName);
@@ -93,9 +85,9 @@ export default function Products() {
     }
   };
 
-  const hasSqlData = sqlData && 
-    Array.isArray(sqlData.sales) && 
-    Array.isArray(sqlData.losses) && 
+  const hasSqlData = sqlData &&
+    Array.isArray(sqlData.sales) &&
+    Array.isArray(sqlData.losses) &&
     (sqlData.sales.length > 0 || sqlData.losses.length > 0);
 
   return (
@@ -113,10 +105,9 @@ export default function Products() {
         </div>
       </div>
 
-      {/* Produtos não mapeados da VIEW SQL */}
       {sqlLoading && (
-        <div className="text-center py-8 text-slate-500">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 mx-auto mb-2"></div>
+        <div className="text-center py-4 text-slate-500">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-slate-900 mx-auto mb-2"></div>
           Buscando produtos não mapeados...
         </div>
       )}
@@ -126,11 +117,13 @@ export default function Products() {
           sqlData={sqlData}
           products={products}
           onProductCreated={handleRefresh}
+          selectedSector={sqlSector}
+          onSectorChange={handleSectorChange}
         />
       )}
 
       {sqlError && (
-        <div className="text-center py-8 text-red-500">
+        <div className="text-center py-4 text-red-500">
           Erro ao buscar produtos não mapeados: {sqlError.message}
         </div>
       )}
