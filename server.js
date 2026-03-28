@@ -515,14 +515,12 @@ app.get('/api/pedidos/:id', async (req, res) => {
     `;
     if (!pedido.length) return res.status(404).json({ error: 'Pedido não encontrado' });
 
+    // Buscar do snapshot (pedido_itens)
     const itens = await sql`
-      SELECT 
-        pl.produto_id, pl.data::text, pl.quantidade_planejada,
-        pp.nome as produto_nome, pp.setor, pp.unidade
-      FROM planejamento pl
-      JOIN produtos_plataforma pp ON pp.id::text = pl.produto_id
-      WHERE pl.pedido_id = ${id}
-      ORDER BY pp.nome, pl.data
+      SELECT produto_id, produto_nome, setor, unidade, data::text, quantidade, dia_semana
+      FROM pedido_itens
+      WHERE pedido_id = ${id}
+      ORDER BY produto_nome, data
     `;
     res.json({ pedido: pedido[0], itens });
   } catch (err) {
@@ -554,15 +552,37 @@ app.post('/api/pedidos/emitir', async (req, res) => {
 
     const pedidoId = pedido[0].id;
 
-    // Vincular planejamentos da semana ao pedido
+    // Buscar quantidades atuais da semana
+    const itensAtuais = await sql`
+      SELECT 
+        pl.produto_id, pl.data::text, pl.quantidade_planejada,
+        pp.nome as produto_nome, pp.setor, pp.unidade,
+        TO_CHAR(pl.data, 'Day') as dia_semana
+      FROM planejamento pl
+      JOIN produtos_plataforma pp ON pp.id::text = pl.produto_id
+      WHERE pl.data BETWEEN ${semana_inicio} AND ${semana_fim}
+        AND pl.quantidade_planejada > 0
+      ORDER BY pp.nome, pl.data
+    `;
+
+    // Salvar snapshot no momento da emissão
+    if (itensAtuais.length > 0) {
+      for (const item of itensAtuais) {
+        await sql`
+          INSERT INTO pedido_itens (pedido_id, produto_id, produto_nome, setor, unidade, data, quantidade, dia_semana)
+          VALUES (${pedidoId}, ${item.produto_id}, ${item.produto_nome}, ${item.setor}, ${item.unidade}, ${item.data}, ${item.quantidade_planejada}, ${item.dia_semana})
+        `;
+      }
+    }
+
+    // Vincular planejamentos ao pedido
     await sql`
       UPDATE planejamento 
       SET pedido_id = ${pedidoId}
       WHERE data BETWEEN ${semana_inicio} AND ${semana_fim}
-        AND pedido_id IS NULL
     `;
 
-    res.json({ success: true, pedido: pedido[0] });
+    res.json({ success: true, pedido: pedido[0], itens: itensAtuais });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
