@@ -79,6 +79,16 @@ export const base44 = {
           return post('relatorio/movimento', params);
         case 'Getproductcomparison':
           return post('relatorio/comparacao', params);
+        case 'getCalendario':
+          return get(`calendario${params?.ano ? '?ano=' + params.ano : ''}`);
+        case 'criarEvento':
+          return post('calendario/criar', params);
+        case 'atualizarEvento':
+          return post('calendario/atualizar', params);
+        case 'deletarEvento':
+          return post('calendario/deletar', params);
+        case 'getEventosSemana':
+          return get(`calendario/semana/${params.inicio}/${params.fim}`);
         case 'getPedidos':
           return get('pedidos');
         case 'getPedido':
