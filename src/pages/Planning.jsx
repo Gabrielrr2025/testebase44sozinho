@@ -820,16 +820,16 @@ export default function Planning() {
                         {selectedProduct.eventos_semana?.map((ev, idx) => {
                           const positivo = parseFloat(ev.impacto_pct) > 0;
                           return (
-                            <div key={idx} className={}>
+                            <div key={idx} className={positivo ? "rounded-lg px-3 py-2 border text-xs bg-blue-50 border-blue-200" : "rounded-lg px-3 py-2 border text-xs bg-amber-50 border-amber-200"}>
                               <div className="flex items-center justify-between">
-                                <span className={}>
+                                <span className={positivo ? "font-semibold text-blue-800" : "font-semibold text-amber-800"}>
                                   {ev.nome}
                                 </span>
-                                <span className={}>
+                                <span className={positivo ? "font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700" : "font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700"}>
                                   {positivo ? '+' : ''}{ev.impacto_pct}%
                                 </span>
                               </div>
-                              <div className={}>
+                              <div className={positivo ? "text-[10px] mt-0.5 opacity-70 text-blue-700" : "text-[10px] mt-0.5 opacity-70 text-amber-700"}>
                                 {ev.data}
                               </div>
                             </div>
@@ -842,7 +842,7 @@ export default function Planning() {
                           </div>
                         ))}
                         {selectedProduct.multiplicador_calendario && selectedProduct.multiplicador_calendario !== 1 && (
-                          <div className={}>
+                          <div className={selectedProduct.multiplicador_calendario >= 1 ? "rounded-lg px-3 py-2 text-xs font-medium flex justify-between bg-blue-100 text-blue-800" : "rounded-lg px-3 py-2 text-xs font-medium flex justify-between bg-amber-100 text-amber-800"}>
                             <span>Impacto total na sugestão:</span>
                             <span className="font-bold">
                               {selectedProduct.multiplicador_calendario >= 1 ? '+' : ''}
