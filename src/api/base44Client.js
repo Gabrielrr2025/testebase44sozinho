@@ -55,7 +55,7 @@ export const base44 = {
         case 'savePlanning':
           return post('planejamento/salvar', params);
         case 'getConfig':
-          return get('config');
+          return get(`config${params?.chave ? '?chave=' + params.chave : ''}`);
         case 'saveConfig':
           return post('config/salvar', params);
         case 'Createproduct':
