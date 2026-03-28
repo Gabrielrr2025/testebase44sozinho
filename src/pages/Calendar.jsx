@@ -54,6 +54,7 @@ export default function Calendar() {
   const [loadingHolidays, setLoadingHolidays] = useState(false);
 
   const queryClient = useQueryClient();
+  const autoImportedRef = React.useRef(new Set());
 
   const { data: eventsData = { eventos: [] } } = useQuery({
     queryKey: ['calendarEvents', currentYear],
@@ -66,36 +67,43 @@ export default function Calendar() {
 
   const allEvents = eventsData?.eventos || [];
 
+  // Auto-importar feriados se o ano não tiver nenhum evento
+  React.useEffect(() => {
+    if (!autoImportedRef.current.has(currentYear) && allEvents.length === 0 && !loadingHolidays) {
+      autoImportedRef.current.add(currentYear);
+      loadHolidays(true);
+    }
+  }, [currentYear, allEvents.length]);
+
   const yearEvents = allEvents.filter(e => {
     try { return getYear(parseISO(e.data)) === currentYear; } catch { return false; }
   });
 
-  const loadHolidays = async () => {
+  const loadHolidays = async (silent = false) => {
     setLoadingHolidays(true);
-    toast.info("Consultando APIs de feriados...");
+    if (!silent) toast.info('Consultando APIs de feriados...');
     try {
       const [brasilapi, nager] = await Promise.all([
         fetchBrasilAPI(currentYear),
         fetchNagerDate(currentYear),
       ]);
 
-      const todos = [...brasilapi, ...nager];
-      const seen = new Set();
-      const unique = todos.filter(h => {
-        const key = `${h.data}__${h.nome.toLowerCase().trim()}`;
-        if (seen.has(key)) return false;
-        seen.add(key); return true;
+      // Deduplicar por data apenas — pega o nome mais curto/simples quando há conflito
+      const porData = new Map();
+      [...brasilapi, ...nager].forEach(h => {
+        const existing = porData.get(h.data);
+        if (!existing || h.nome.length < existing.nome.length) {
+          porData.set(h.data, h);
+        }
       });
+      const unique = Array.from(porData.values());
 
       const novos = unique.filter(h =>
-        !allEvents.some(ev =>
-          ev.data === h.data &&
-          ev.nome.toLowerCase().trim() === h.nome.toLowerCase().trim()
-        )
+        !allEvents.some(ev => ev.data === h.data)
       );
 
       if (novos.length === 0) {
-        toast.info("Todos os feriados já estão cadastrados.");
+        if (!silent) toast.info('Todos os feriados já estão cadastrados.');
         return;
       }
 
@@ -103,7 +111,8 @@ export default function Calendar() {
       for (const h of novos) {
         const res = await base44.functions.invoke('criarEvento', {
           nome: h.nome, data: h.data, tipo: h.tipo,
-          impacto_pct: 0, setores: ['Todos'],
+          impacto_pct: 10, // padrão 10% para feriados
+          setores: ['Todos'],
           notas: `Importado via ${h.fonte}`, fonte: h.fonte,
         });
         const data = res?.data || res;
@@ -111,9 +120,9 @@ export default function Calendar() {
       }
 
       queryClient.invalidateQueries(['calendarEvents']);
-      toast.success(`${importados} feriado(s) importado(s) com sucesso!`);
+      if (!silent) toast.success(`${importados} feriado(s) importado(s)!`);
     } catch (err) {
-      toast.error("Erro ao importar feriados.");
+      if (!silent) toast.error('Erro ao importar feriados.');
     } finally {
       setLoadingHolidays(false);
     }
