@@ -479,5 +479,105 @@ app.post('/api/config/salvar', async (req, res) => {
   }
 });
 
+// ─── PEDIDOS DE PRODUÇÃO ─────────────────────────────────────────────────────
+
+// Listar histórico de pedidos
+app.get('/api/pedidos', async (req, res) => {
+  try {
+    const sql = getDB();
+    const result = await sql`
+      SELECT 
+        id, numero, semana_inicio::text, semana_fim::text,
+        emitido_em, status
+      FROM pedidos_producao
+      ORDER BY emitido_em DESC
+    `;
+    res.json({ pedidos: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Buscar um pedido específico com suas quantidades
+app.get('/api/pedidos/:id', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { id } = req.params;
+    const pedido = await sql`
+      SELECT id, numero, semana_inicio::text, semana_fim::text, emitido_em, status
+      FROM pedidos_producao WHERE id = ${id}
+    `;
+    if (!pedido.length) return res.status(404).json({ error: 'Pedido não encontrado' });
+
+    const itens = await sql`
+      SELECT 
+        pl.produto_id, pl.data::text, pl.quantidade_planejada,
+        pp.nome as produto_nome, pp.setor, pp.unidade
+      FROM planejamento pl
+      JOIN produtos_plataforma pp ON pp.id::text = pl.produto_id
+      WHERE pl.pedido_id = ${id}
+      ORDER BY pp.nome, pl.data
+    `;
+    res.json({ pedido: pedido[0], itens });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Emitir pedido de produção
+app.post('/api/pedidos/emitir', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { semana_inicio, semana_fim } = req.body;
+
+    // Gerar número único PP-YYYY-NNN
+    const ano = new Date().getFullYear();
+    const countResult = await sql`
+      SELECT COUNT(*) as total FROM pedidos_producao 
+      WHERE EXTRACT(YEAR FROM emitido_em) = ${ano}
+    `;
+    const seq = (parseInt(countResult[0].total) + 1).toString().padStart(3, '0');
+    const numero = `PP-${ano}-${seq}`;
+
+    // Criar pedido
+    const pedido = await sql`
+      INSERT INTO pedidos_producao (numero, semana_inicio, semana_fim, status)
+      VALUES (${numero}, ${semana_inicio}, ${semana_fim}, 'emitido')
+      RETURNING id, numero
+    `;
+
+    const pedidoId = pedido[0].id;
+
+    // Vincular planejamentos da semana ao pedido
+    await sql`
+      UPDATE planejamento 
+      SET pedido_id = ${pedidoId}
+      WHERE data BETWEEN ${semana_inicio} AND ${semana_fim}
+        AND pedido_id IS NULL
+    `;
+
+    res.json({ success: true, pedido: pedido[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Verificar se semana já tem pedido emitido
+app.get('/api/pedidos/semana/:inicio/:fim', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { inicio, fim } = req.params;
+    const result = await sql`
+      SELECT id, numero, emitido_em, status
+      FROM pedidos_producao
+      WHERE semana_inicio = ${inicio} AND semana_fim = ${fim}
+      LIMIT 1
+    `;
+    res.json({ pedido: result[0] || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
