@@ -552,27 +552,25 @@ app.post('/api/pedidos/emitir', async (req, res) => {
 
     const pedidoId = pedido[0].id;
 
-    // Buscar quantidades atuais da semana
+    // Buscar quantidades atuais da semana (sem filtro de pedido_id)
     const itensAtuais = await sql`
       SELECT 
-        pl.produto_id, pl.data::text, pl.quantidade_planejada,
+        pl.produto_id::text, pl.data::text, pl.quantidade_planejada,
         pp.nome as produto_nome, pp.setor, pp.unidade,
         TO_CHAR(pl.data, 'Day') as dia_semana
       FROM planejamento pl
-      JOIN produtos_plataforma pp ON pp.id::text = pl.produto_id
+      JOIN produtos_plataforma pp ON pp.id = pl.produto_id::integer
       WHERE pl.data BETWEEN ${semana_inicio} AND ${semana_fim}
         AND pl.quantidade_planejada > 0
       ORDER BY pp.nome, pl.data
     `;
 
     // Salvar snapshot no momento da emissão
-    if (itensAtuais.length > 0) {
-      for (const item of itensAtuais) {
-        await sql`
-          INSERT INTO pedido_itens (pedido_id, produto_id, produto_nome, setor, unidade, data, quantidade, dia_semana)
-          VALUES (${pedidoId}, ${item.produto_id}, ${item.produto_nome}, ${item.setor}, ${item.unidade}, ${item.data}, ${item.quantidade_planejada}, ${item.dia_semana})
-        `;
-      }
+    for (const item of itensAtuais) {
+      await sql`
+        INSERT INTO pedido_itens (pedido_id, produto_id, produto_nome, setor, unidade, data, quantidade, dia_semana)
+        VALUES (${pedidoId}, ${item.produto_id}, ${item.produto_nome}, ${item.setor}, ${item.unidade}, ${item.data}, ${item.quantidade_planejada}, ${item.dia_semana})
+      `;
     }
 
     // Vincular planejamentos ao pedido
