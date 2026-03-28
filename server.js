@@ -405,12 +405,42 @@ app.post('/api/planejamento/dados', async (req, res) => {
       ORDER BY pp.nome
     `;
 
-    const produtosComSugestao = produtos.map(p => ({
-      ...p,
-      avg_sales: parseFloat(p.avg_sales || 0).toFixed(1),
-      avg_losses: parseFloat(p.avg_losses || 0).toFixed(1),
-      suggested_production: Math.ceil(parseFloat(p.avg_sales || 0) * 1.1)
-    }));
+    // Buscar eventos do calendário na semana planejada
+    const eventosCalendario = await sql`
+      SELECT id, nome, data::text, tipo, impacto_pct, setores, notas
+      FROM calendario_eventos
+      WHERE data BETWEEN ${startDate} AND ${endDate}
+      ORDER BY data
+    `;
+
+    // Calcular multiplicador total dos eventos da semana
+    const multiplicadorGlobal = eventosCalendario.reduce((mult, ev) => {
+      const impacto = parseFloat(ev.impacto_pct || 0);
+      return mult * (1 + impacto / 100);
+    }, 1);
+
+    const produtosComSugestao = produtos.map(p => {
+      const avgSales = parseFloat(p.avg_sales || 0);
+      const sugestaoBase = Math.ceil(avgSales * 1.1);
+      const sugestaoComEvento = Math.ceil(sugestaoBase * multiplicadorGlobal);
+
+      // Filtrar eventos relevantes para este produto (setor ou Todos)
+      const eventosRelevantes = eventosCalendario.filter(ev => {
+        const setores = ev.setores || ['Todos'];
+        return setores.includes('Todos') || setores.includes(p.setor);
+      });
+
+      return {
+        ...p,
+        avg_sales: avgSales.toFixed(1),
+        avg_losses: parseFloat(p.avg_losses || 0).toFixed(1),
+        suggested_production: sugestaoComEvento,
+        suggested_production_base: sugestaoBase,
+        multiplicador_calendario: multiplicadorGlobal,
+        eventos_semana: eventosRelevantes.filter(ev => parseFloat(ev.impacto_pct || 0) !== 0),
+        eventos_semana_info: eventosRelevantes.filter(ev => parseFloat(ev.impacto_pct || 0) === 0),
+      };
+    });
 
     const planejamentos = await sql`
       SELECT produto_id::text, data::text, quantidade_planejada
@@ -418,7 +448,7 @@ app.post('/api/planejamento/dados', async (req, res) => {
       WHERE data BETWEEN ${startDate} AND ${endDate}
     `;
 
-    res.json({ products: produtosComSugestao, planejamentos });
+    res.json({ products: produtosComSugestao, planejamentos, eventos: eventosCalendario });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
