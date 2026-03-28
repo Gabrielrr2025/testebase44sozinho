@@ -413,22 +413,23 @@ app.post('/api/planejamento/dados', async (req, res) => {
       ORDER BY data
     `;
 
-    // Calcular multiplicador total dos eventos da semana
-    const multiplicadorGlobal = eventosCalendario.reduce((mult, ev) => {
-      const impacto = parseFloat(ev.impacto_pct || 0);
-      return mult * (1 + impacto / 100);
-    }, 1);
-
     const produtosComSugestao = produtos.map(p => {
       const avgSales = parseFloat(p.avg_sales || 0);
       const sugestaoBase = Math.ceil(avgSales * 1.1);
-      const sugestaoComEvento = Math.ceil(sugestaoBase * multiplicadorGlobal);
 
-      // Filtrar eventos relevantes para este produto (setor ou Todos)
+      // Filtrar eventos relevantes para este produto (produto específico, setor ou Todos)
       const eventosRelevantes = eventosCalendario.filter(ev => {
+        if (ev.produto_id) return String(ev.produto_id) === String(p.id);
         const setores = ev.setores || ['Todos'];
         return setores.includes('Todos') || setores.includes(p.setor);
       });
+
+      // Calcular multiplicador específico para este produto
+      const multiplicadorProduto = eventosRelevantes
+        .filter(ev => parseFloat(ev.impacto_pct || 0) !== 0)
+        .reduce((mult, ev) => mult * (1 + parseFloat(ev.impacto_pct) / 100), 1);
+
+      const sugestaoComEvento = Math.ceil(sugestaoBase * multiplicadorProduto);
 
       return {
         ...p,
@@ -436,7 +437,7 @@ app.post('/api/planejamento/dados', async (req, res) => {
         avg_losses: parseFloat(p.avg_losses || 0).toFixed(1),
         suggested_production: sugestaoComEvento,
         suggested_production_base: sugestaoBase,
-        multiplicador_calendario: multiplicadorGlobal,
+        multiplicador_calendario: multiplicadorProduto,
         eventos_semana: eventosRelevantes.filter(ev => parseFloat(ev.impacto_pct || 0) !== 0),
         eventos_semana_info: eventosRelevantes.filter(ev => parseFloat(ev.impacto_pct || 0) === 0),
       };
@@ -658,10 +659,10 @@ app.get('/api/calendario', async (req, res) => {
 app.post('/api/calendario/criar', async (req, res) => {
   try {
     const sql = getDB();
-    const { nome, data, tipo, impacto_pct, setores, notas, fonte } = req.body;
+    const { nome, data, tipo, impacto_pct, setores, notas, fonte, produto_id } = req.body;
     const result = await sql`
-      INSERT INTO calendario_eventos (nome, data, tipo, impacto_pct, setores, notas, fonte)
-      VALUES (${nome}, ${data}, ${tipo || 'Feriado Nacional'}, ${impacto_pct || 0}, ${setores || ['Todos']}, ${notas || ''}, ${fonte || 'manual'})
+      INSERT INTO calendario_eventos (nome, data, tipo, impacto_pct, setores, notas, fonte, produto_id)
+      VALUES (${nome}, ${data}, ${tipo || 'Feriado Nacional'}, ${impacto_pct || 0}, ${setores || ['Todos']}, ${notas || ''}, ${fonte || 'manual'}, ${produto_id || null})
       ON CONFLICT (data, LOWER(nome)) DO NOTHING
       RETURNING *
     `;
@@ -677,12 +678,12 @@ app.post('/api/calendario/criar', async (req, res) => {
 app.post('/api/calendario/atualizar', async (req, res) => {
   try {
     const sql = getDB();
-    const { id, nome, data, tipo, impacto_pct, setores, notas } = req.body;
+    const { id, nome, data, tipo, impacto_pct, setores, notas, produto_id } = req.body;
     const result = await sql`
       UPDATE calendario_eventos
       SET nome = ${nome}, data = ${data}, tipo = ${tipo},
           impacto_pct = ${impacto_pct || 0}, setores = ${setores || ['Todos']},
-          notas = ${notas || ''}
+          notas = ${notas || ''}, produto_id = ${produto_id || null}
       WHERE id = ${id}
       RETURNING *
     `;
