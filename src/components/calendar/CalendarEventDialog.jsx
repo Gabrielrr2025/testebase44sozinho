@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,9 +6,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { base44 } from "@/api/base44Client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { Search } from "lucide-react";
 
 const SECTORS = ['Todos', 'PADARIA', 'SALGADOS', 'CONFEITARIA FINA', 'CONFEITARIA TRADICIONAL', 'LANCHONETE', 'RESTAURANTE', 'FRIOS'];
 
@@ -22,43 +23,106 @@ const IMPACT_OPTIONS = [
   { label: '-50%', value: -50 },
 ];
 
+// Tipo de escopo do impacto
+const SCOPE_OPTIONS = [
+  { value: 'todos', label: 'Todos os produtos' },
+  { value: 'setor', label: 'Por setor' },
+  { value: 'produto', label: 'Produto específico' },
+];
+
 export default function CalendarEventDialog({ event, initialDate, onClose, onSave }) {
   const queryClient = useQueryClient();
   const [isSaving, setIsSaving] = useState(false);
+  const [scope, setScope] = useState('todos');
+  const [produtoSearch, setProdutoSearch] = useState('');
+
   const [form, setForm] = useState({
     nome: '',
     data: initialDate || format(new Date(), 'yyyy-MM-dd'),
     tipo: 'Feriado Nacional',
     impacto_pct: 0,
     setores: ['Todos'],
+    produto_id: null,
     notas: '',
   });
 
+  // Buscar produtos cadastrados
+  const { data: productsData } = useQuery({
+    queryKey: ['products'],
+    queryFn: async () => {
+      const res = await base44.functions.invoke('Getproducts', {});
+      return res?.data || res;
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+  const products = productsData?.products || [];
+
+  const filteredProducts = useMemo(() => {
+    if (!produtoSearch.trim()) return products.slice(0, 20);
+    const s = produtoSearch.toLowerCase();
+    return products.filter(p =>
+      p.name?.toLowerCase().includes(s) || p.code?.toLowerCase().includes(s)
+    ).slice(0, 20);
+  }, [products, produtoSearch]);
+
   useEffect(() => {
     if (event) {
+      // Determinar scope a partir dos dados salvos
+      let savedScope = 'todos';
+      if (event.produto_id) savedScope = 'produto';
+      else if (event.setores && !event.setores.includes('Todos')) savedScope = 'setor';
+
+      setScope(savedScope);
       setForm({
         nome: event.nome || '',
         data: event.data || format(new Date(), 'yyyy-MM-dd'),
         tipo: event.tipo || 'Feriado Nacional',
         impacto_pct: parseFloat(event.impacto_pct || 0),
         setores: event.setores || ['Todos'],
+        produto_id: event.produto_id || null,
         notas: event.notas || '',
       });
+
+      // Preencher busca com nome do produto se houver
+      if (event.produto_id && products.length > 0) {
+        const prod = products.find(p => String(p.id) === String(event.produto_id));
+        if (prod) setProdutoSearch(prod.name);
+      }
     } else if (initialDate) {
       setForm(prev => ({ ...prev, data: initialDate }));
     }
   }, [event, initialDate]);
 
+  // Ajustar setores/produto_id conforme scope
+  const handleScopeChange = (newScope) => {
+    setScope(newScope);
+    if (newScope === 'todos') {
+      setForm(prev => ({ ...prev, setores: ['Todos'], produto_id: null }));
+    } else if (newScope === 'setor') {
+      setForm(prev => ({ ...prev, setores: [SECTORS[1]], produto_id: null }));
+    } else {
+      setForm(prev => ({ ...prev, setores: ['Todos'], produto_id: null }));
+      setProdutoSearch('');
+    }
+  };
+
   const handleSave = async () => {
     if (!form.nome.trim()) return toast.error("Nome é obrigatório.");
     if (!form.data) return toast.error("Data é obrigatória.");
+    if (scope === 'produto' && !form.produto_id) return toast.error("Selecione um produto.");
+
     setIsSaving(true);
     try {
+      const payload = { ...form };
+      if (scope === 'todos') { payload.setores = ['Todos']; payload.produto_id = null; }
+      else if (scope === 'setor') { payload.produto_id = null; }
+      else { payload.setores = ['Todos']; }
+
       if (event) {
-        await base44.functions.invoke('atualizarEvento', { id: event.id, ...form });
+        await base44.functions.invoke('atualizarEvento', { id: event.id, ...payload });
         toast.success("Evento atualizado!");
       } else {
-        const res = await base44.functions.invoke('criarEvento', { ...form, fonte: 'manual' });
+        const res = await base44.functions.invoke('criarEvento', { ...payload, fonte: 'manual' });
         const data = res?.data || res;
         if (data?.success === false) return toast.error(data.message || "Evento já existe.");
         toast.success("Evento criado!");
@@ -85,20 +149,26 @@ export default function CalendarEventDialog({ event, initialDate, onClose, onSav
     }
   };
 
+  const selectedProduct = form.produto_id
+    ? products.find(p => String(p.id) === String(form.produto_id))
+    : null;
+
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md z-[9999]">
+      <DialogContent className="max-w-md z-[9999] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{event ? 'Editar Evento' : 'Novo Evento'}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3 py-2">
+          {/* Nome */}
           <div>
             <Label className="text-sm">Nome *</Label>
             <Input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })}
               placeholder="Ex: Páscoa, Natal, Festa Junina..." className="h-9 mt-1" />
           </div>
 
+          {/* Data + Tipo */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-sm">Data *</Label>
@@ -120,6 +190,7 @@ export default function CalendarEventDialog({ event, initialDate, onClose, onSav
             </div>
           </div>
 
+          {/* Impacto */}
           <div>
             <Label className="text-sm">Impacto na Demanda</Label>
             <div className="flex flex-wrap gap-1.5 mt-1">
@@ -147,17 +218,79 @@ export default function CalendarEventDialog({ event, initialDate, onClose, onSav
             )}
           </div>
 
+          {/* Escopo do impacto */}
           <div>
-            <Label className="text-sm">Setor Afetado</Label>
-            <Select value={form.setores[0] || 'Todos'}
-              onValueChange={v => setForm({ ...form, setores: [v] })}>
-              <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
-              <SelectContent className="z-[10000]">
-                {SECTORS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Label className="text-sm">Impacto afeta</Label>
+            <div className="flex gap-2 mt-1">
+              {SCOPE_OPTIONS.map(opt => (
+                <button key={opt.value} type="button"
+                  onClick={() => handleScopeChange(opt.value)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    scope === opt.value
+                      ? 'bg-slate-800 text-white border-slate-800'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+                  }`}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Por setor */}
+            {scope === 'setor' && (
+              <Select value={form.setores[0] || 'PADARIA'}
+                onValueChange={v => setForm({ ...form, setores: [v] })}>
+                <SelectTrigger className="h-9 mt-2"><SelectValue /></SelectTrigger>
+                <SelectContent className="z-[10000]">
+                  {SECTORS.filter(s => s !== 'Todos').map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {/* Por produto */}
+            {scope === 'produto' && (
+              <div className="mt-2 space-y-1">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <Input
+                    value={produtoSearch}
+                    onChange={e => { setProdutoSearch(e.target.value); setForm(prev => ({ ...prev, produto_id: null })); }}
+                    placeholder="Buscar produto..."
+                    className="h-9 pl-8 text-sm"
+                  />
+                </div>
+                {produtoSearch && !form.produto_id && (
+                  <div className="border rounded-lg max-h-40 overflow-y-auto bg-white shadow-sm">
+                    {filteredProducts.length === 0 ? (
+                      <p className="text-xs text-slate-400 p-3 text-center">Nenhum produto encontrado</p>
+                    ) : (
+                      filteredProducts.map(p => (
+                        <button key={p.id} type="button"
+                          onClick={() => {
+                            setForm(prev => ({ ...prev, produto_id: String(p.id) }));
+                            setProdutoSearch(p.name);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b last:border-0 transition-colors">
+                          <span className="font-medium text-slate-800">{p.name}</span>
+                          <span className="ml-2 text-slate-400">{p.sector}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+                {selectedProduct && (
+                  <div className="flex items-center justify-between px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs">
+                    <span className="font-medium text-blue-800">{selectedProduct.name}</span>
+                    <button type="button" onClick={() => { setForm(prev => ({ ...prev, produto_id: null })); setProdutoSearch(''); }}
+                      className="text-blue-400 hover:text-blue-700 ml-2">✕</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Observações */}
           <div>
             <Label className="text-sm">Observações</Label>
             <Textarea value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })}
