@@ -56,6 +56,7 @@ export default function Planning() {
   const [showHistorico, setShowHistorico] = useState(false);
   const [pedidoEmitido, setPedidoEmitido] = useState(null);
   const [isEmitindo, setIsEmitindo] = useState(false);
+  const [pedidoSelecionado, setPedidoSelecionado] = useState(null);
 
   const saveTimeoutRef = useRef({});
 
@@ -113,6 +114,17 @@ export default function Planning() {
       const response = await base44.functions.invoke('getPedidoSemana', { inicio: startDate, fim: endDate });
       return response.data || response;
     },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Detalhes do pedido selecionado no histórico
+  const pedidoDetalheQuery = useQuery({
+    queryKey: ['pedidoDetalhe', pedidoSelecionado?.id],
+    queryFn: async () => {
+      const response = await base44.functions.invoke('getPedido', { id: pedidoSelecionado.id });
+      return response.data || response;
+    },
+    enabled: !!pedidoSelecionado,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -613,9 +625,11 @@ export default function Planning() {
                                     min="0"
                                     value={qty || ''}
                                     onChange={(e) => handleQuantityChange(product.produto_id, idx, e.target.value)}
-                                    className={`w-20 text-center h-9 ${!isProductionDay ? 'bg-slate-100 text-slate-400' : ''}`}
-                                    disabled={!isProductionDay || isWeekLocked}
-                                    title={isWeekLocked ? 'Bloqueado - use senha para editar' : !isProductionDay ? 'Não produzido neste dia' : ''}
+                                    onClick={() => { if (isWeekLocked) setShowUnlockDialog(true); }}
+                                    className={`w-20 text-center h-9 ${!isProductionDay ? 'bg-slate-100 text-slate-400' : ''} ${isWeekLocked ? 'cursor-pointer' : ''}`}
+                                    disabled={!isProductionDay}
+                                    readOnly={isWeekLocked}
+                                    title={isWeekLocked ? 'Bloqueado — clique para inserir senha' : !isProductionDay ? 'Não produzido neste dia' : ''}
                                   />
                                 </TableCell>
                               );
@@ -784,54 +798,125 @@ export default function Planning() {
       </Dialog>
 
       {/* ===== DIALOG HISTÓRICO ===== */}
-      <Dialog open={showHistorico} onOpenChange={setShowHistorico}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+      <Dialog open={showHistorico} onOpenChange={(open) => { setShowHistorico(open); if (!open) setPedidoSelecionado(null); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="w-5 h-5" />
               Histórico de Pedidos
             </DialogTitle>
           </DialogHeader>
-          <div className="py-2 space-y-2">
-            {pedidosQuery.isLoading ? (
-              <div className="text-center py-8 text-slate-500">
-                <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin mx-auto mb-2" />
-                Carregando...
-              </div>
-            ) : pedidos.length === 0 ? (
-              <div className="text-center py-8 text-slate-400">Nenhum pedido emitido ainda.</div>
-            ) : (
-              pedidos.map(pedido => (
-                <div
-                  key={pedido.id}
-                  className="p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
-                  onClick={() => {
-                    // Navegar para a semana do pedido
-                    const semanaInicio = new Date(pedido.semana_inicio + 'T12:00:00');
-                    setCurrentDate(semanaInicio);
-                    setShowHistorico(false);
-                    queryClient.invalidateQueries(['savedPlanning']);
-                    queryClient.invalidateQueries(['planningData']);
-                    queryClient.invalidateQueries(['pedidoSemana']);
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900">{pedido.numero}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      pedido.status === 'emitido' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {pedido.status}
-                    </span>
-                  </div>
-                  <div className="text-sm text-slate-600 mt-1">
-                    {format(new Date(pedido.semana_inicio + 'T12:00:00'), 'dd/MM/yyyy')} a {format(new Date(pedido.semana_fim + 'T12:00:00'), 'dd/MM/yyyy')}
-                  </div>
-                  <div className="text-xs text-slate-400 mt-0.5">
-                    Emitido em {format(new Date(pedido.emitido_em), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
-                  </div>
+          <div className="flex gap-4">
+            {/* Lista de pedidos */}
+            <div className="w-64 flex-shrink-0 space-y-2">
+              {pedidosQuery.isLoading ? (
+                <div className="text-center py-8 text-slate-500">
+                  <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin mx-auto mb-2" />
+                  Carregando...
                 </div>
-              ))
-            )}
+              ) : pedidos.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">Nenhum pedido emitido ainda.</div>
+              ) : (
+                pedidos.map(pedido => (
+                  <div
+                    key={pedido.id}
+                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                      pedidoSelecionado?.id === pedido.id
+                        ? 'border-blue-400 bg-blue-50'
+                        : 'hover:bg-slate-50'
+                    }`}
+                    onClick={() => setPedidoSelecionado(pedido)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-sm">{pedido.numero}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        pedido.status === 'emitido' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {pedido.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-600 mt-1">
+                      {format(new Date(pedido.semana_inicio + 'T12:00:00'), 'dd/MM')} a {format(new Date(pedido.semana_fim + 'T12:00:00'), 'dd/MM/yyyy')}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      {format(new Date(pedido.emitido_em), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Prévia do pedido selecionado */}
+            <div className="flex-1 border-l pl-4">
+              {!pedidoSelecionado ? (
+                <div className="text-center py-12 text-slate-400">
+                  <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">Selecione um pedido para ver os detalhes</p>
+                </div>
+              ) : pedidoDetalheQuery.isLoading ? (
+                <div className="text-center py-8 text-slate-500">
+                  <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin mx-auto mb-2" />
+                  Carregando detalhes...
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="font-bold text-slate-900">{pedidoSelecionado.numero}</h3>
+                    <p className="text-xs text-slate-500">
+                      Semana: {format(new Date(pedidoSelecionado.semana_inicio + 'T12:00:00'), 'dd/MM/yyyy')} a {format(new Date(pedidoSelecionado.semana_fim + 'T12:00:00'), 'dd/MM/yyyy')}
+                    </p>
+                  </div>
+
+                  {/* Tabela de itens */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="text-left p-2 rounded-tl">Produto</th>
+                          <th className="text-center p-2">Setor</th>
+                          <th className="text-center p-2 rounded-tr">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(pedidoDetalheQuery.data?.itens || []).reduce((acc, item) => {
+                          const existing = acc.find(r => r.produto_id === item.produto_id);
+                          if (existing) {
+                            existing.total += parseFloat(item.quantidade_planejada || 0);
+                          } else {
+                            acc.push({ ...item, total: parseFloat(item.quantidade_planejada || 0) });
+                          }
+                          return acc;
+                        }, []).map((item, i) => (
+                          <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                            <td className="p-2 font-medium text-slate-800">{item.produto_nome}</td>
+                            <td className="p-2 text-center text-slate-500">{item.setor}</td>
+                            <td className="p-2 text-center font-bold text-slate-900">{item.total} {item.unidade}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Botão navegar para semana */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      const semanaInicio = new Date(pedidoSelecionado.semana_inicio + 'T12:00:00');
+                      setCurrentDate(semanaInicio);
+                      setShowHistorico(false);
+                      setPedidoSelecionado(null);
+                      queryClient.invalidateQueries(['savedPlanning']);
+                      queryClient.invalidateQueries(['planningData']);
+                      queryClient.invalidateQueries(['pedidoSemana']);
+                    }}
+                  >
+                    Ir para esta semana
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
