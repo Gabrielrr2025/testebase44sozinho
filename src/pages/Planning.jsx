@@ -898,16 +898,16 @@ export default function Planning() {
 
       {/* ===== DIALOG HISTÓRICO ===== */}
       <Dialog open={showHistorico} onOpenChange={(open) => { setShowHistorico(open); if (!open) setPedidoSelecionado(null); }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="w-5 h-5" />
               Histórico de Pedidos
             </DialogTitle>
           </DialogHeader>
-          <div className="flex gap-4">
-            {/* Lista de pedidos */}
-            <div className="w-64 flex-shrink-0 space-y-2">
+          <div className="flex gap-4" style={{height: '65vh'}}>
+            {/* Lista de pedidos — só ela rola */}
+            <div className="w-64 flex-shrink-0 space-y-2 overflow-y-auto pr-1">
               {pedidosQuery.isLoading ? (
                 <div className="text-center py-8 text-slate-500">
                   <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin mx-auto mb-2" />
@@ -945,8 +945,8 @@ export default function Planning() {
               )}
             </div>
 
-            {/* Prévia do pedido selecionado */}
-            <div className="flex-1 border-l pl-4">
+            {/* Prévia do pedido selecionado — não rola */}
+            <div className="flex-1 border-l pl-4 overflow-hidden">
               {!pedidoSelecionado ? (
                 <div className="text-center py-12 text-slate-400">
                   <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" />
