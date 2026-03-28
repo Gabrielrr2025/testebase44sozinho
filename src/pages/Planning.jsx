@@ -303,6 +303,97 @@ export default function Planning() {
     setSelectedProduct(null);
   };
 
+  // PDF do pedido histórico (snapshot)
+  const handleExportPDFHistorico = (pedido, itens) => {
+    try {
+      const doc = new jsPDF('landscape', 'mm', 'a4');
+      const pageW = doc.internal.pageSize.getWidth();
+
+      // Cabeçalho
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, pageW, 22, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PEDIDO DE PRODUÇÃO', 14, 10);
+      doc.setFontSize(14);
+      doc.text(pedido.numero, pageW - 14, 10, { align: 'right' });
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `Semana: ${format(new Date(pedido.semana_inicio + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })} a ${format(new Date(pedido.semana_fim + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}`,
+        14, 17
+      );
+      doc.text(
+        `Emitido em: ${format(new Date(pedido.emitido_em), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`,
+        pageW - 14, 17, { align: 'right' }
+      );
+
+      // Agrupar itens por produto
+      const agrupados = itens.reduce((acc, item) => {
+        const existing = acc.find(r => r.produto_id === item.produto_id);
+        if (existing) {
+          existing.total += parseFloat(item.quantidade || 0);
+        } else {
+          acc.push({ ...item, total: parseFloat(item.quantidade || 0) });
+        }
+        return acc;
+      }, []);
+
+      let yPos = 28;
+      const startX = 10;
+      const rowH = 9;
+      const colW = [100, 60, 40, 40];
+      const totalW = colW.reduce((a, b) => a + b, 0);
+
+      // Cabeçalho tabela
+      doc.setFillColor(71, 85, 105);
+      doc.rect(startX, yPos, totalW, rowH, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      ['PRODUTO', 'SETOR', 'UNIDADE', 'TOTAL'].forEach((h, i) => {
+        let xPos = startX + colW.slice(0, i).reduce((a, b) => a + b, 0);
+        if (i === 0) doc.text(h, xPos + 2, yPos + 6);
+        else doc.text(h, xPos + colW[i] / 2, yPos + 6, { align: 'center' });
+      });
+      yPos += rowH;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(15, 23, 42);
+      agrupados.forEach((item, idx) => {
+        if (yPos > 190) { doc.addPage('landscape'); yPos = 15; }
+        if (idx % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(startX, yPos, totalW, rowH, 'F');
+        }
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(startX, yPos, totalW, rowH, 'S');
+        doc.setFontSize(8);
+        const row = [item.produto_nome, item.setor, item.unidade, item.total.toString()];
+        row.forEach((cell, i) => {
+          let xPos = startX + colW.slice(0, i).reduce((a, b) => a + b, 0);
+          if (i === 0) doc.text(cell.length > 45 ? cell.substring(0, 42) + '...' : cell, xPos + 2, yPos + 6);
+          else {
+            if (i === 3) { doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 64, 175); }
+            doc.text(cell, xPos + colW[i] / 2, yPos + 6, { align: 'center' });
+            doc.setFont('helvetica', 'normal'); doc.setTextColor(15, 23, 42);
+          }
+        });
+        yPos += rowH;
+      });
+
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, pageW / 2, 205, { align: 'center' });
+      doc.save(`${pedido.numero}.pdf`);
+      toast.success('PDF exportado!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao exportar PDF');
+    }
+  };
+
   const getProductTotal = (productId) =>
     weekDays.reduce((sum, _, idx) => sum + (plannedQuantities[`${productId}-${idx}`] || 0), 0);
 
@@ -875,23 +966,23 @@ export default function Planning() {
                     </p>
                   </div>
 
-                  {/* Tabela de itens */}
+                  {/* Tabela de itens do snapshot */}
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-slate-100">
-                          <th className="text-left p-2 rounded-tl">Produto</th>
+                          <th className="text-left p-2">Produto</th>
                           <th className="text-center p-2">Setor</th>
-                          <th className="text-center p-2 rounded-tr">Total</th>
+                          <th className="text-center p-2">Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(pedidoDetalheQuery.data?.itens || []).reduce((acc, item) => {
                           const existing = acc.find(r => r.produto_id === item.produto_id);
                           if (existing) {
-                            existing.total += parseFloat(item.quantidade_planejada || 0);
+                            existing.total += parseFloat(item.quantidade || item.quantidade_planejada || 0);
                           } else {
-                            acc.push({ ...item, total: parseFloat(item.quantidade_planejada || 0) });
+                            acc.push({ ...item, total: parseFloat(item.quantidade || item.quantidade_planejada || 0) });
                           }
                           return acc;
                         }, []).map((item, i) => (
@@ -901,27 +992,40 @@ export default function Planning() {
                             <td className="p-2 text-center font-bold text-slate-900">{item.total} {item.unidade}</td>
                           </tr>
                         ))}
+                        {(pedidoDetalheQuery.data?.itens || []).length === 0 && (
+                          <tr><td colSpan={3} className="p-4 text-center text-slate-400">Nenhum item registrado</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
 
-                  {/* Botão navegar para semana */}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      const semanaInicio = new Date(pedidoSelecionado.semana_inicio + 'T12:00:00');
-                      setCurrentDate(semanaInicio);
-                      setShowHistorico(false);
-                      setPedidoSelecionado(null);
-                      queryClient.invalidateQueries(['savedPlanning']);
-                      queryClient.invalidateQueries(['planningData']);
-                      queryClient.invalidateQueries(['pedidoSemana']);
-                    }}
-                  >
-                    Ir para esta semana
-                  </Button>
+                  {/* Botões */}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        const semanaInicio = new Date(pedidoSelecionado.semana_inicio + 'T12:00:00');
+                        setCurrentDate(semanaInicio);
+                        setShowHistorico(false);
+                        setPedidoSelecionado(null);
+                        queryClient.invalidateQueries(['savedPlanning']);
+                        queryClient.invalidateQueries(['planningData']);
+                        queryClient.invalidateQueries(['pedidoSemana']);
+                      }}
+                    >
+                      Ir para esta semana
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-slate-800 hover:bg-slate-700 text-white"
+                      onClick={() => handleExportPDFHistorico(pedidoSelecionado, pedidoDetalheQuery.data?.itens || [])}
+                    >
+                      <FileText className="w-3 h-3 mr-1" />
+                      PDF
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
