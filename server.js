@@ -603,5 +603,91 @@ app.get('/api/pedidos/semana/:inicio/:fim', async (req, res) => {
   }
 });
 
+// ─── CALENDÁRIO ──────────────────────────────────────────────────────────────
+
+app.get('/api/calendario', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { ano } = req.query;
+    let result;
+    if (ano) {
+      result = await sql`
+        SELECT * FROM calendario_eventos
+        WHERE EXTRACT(YEAR FROM data) = ${parseInt(ano)}
+        ORDER BY data
+      `;
+    } else {
+      result = await sql`SELECT * FROM calendario_eventos ORDER BY data`;
+    }
+    res.json({ eventos: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/calendario/criar', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { nome, data, tipo, impacto_pct, setores, notas, fonte } = req.body;
+    const result = await sql`
+      INSERT INTO calendario_eventos (nome, data, tipo, impacto_pct, setores, notas, fonte)
+      VALUES (${nome}, ${data}, ${tipo || 'Feriado Nacional'}, ${impacto_pct || 0}, ${setores || ['Todos']}, ${notas || ''}, ${fonte || 'manual'})
+      ON CONFLICT (data, LOWER(nome)) DO NOTHING
+      RETURNING *
+    `;
+    if (result.length === 0) {
+      return res.json({ success: false, message: 'Evento já existe' });
+    }
+    res.json({ success: true, evento: result[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/calendario/atualizar', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { id, nome, data, tipo, impacto_pct, setores, notas } = req.body;
+    const result = await sql`
+      UPDATE calendario_eventos
+      SET nome = ${nome}, data = ${data}, tipo = ${tipo},
+          impacto_pct = ${impacto_pct || 0}, setores = ${setores || ['Todos']},
+          notas = ${notas || ''}
+      WHERE id = ${id}
+      RETURNING *
+    `;
+    res.json({ success: true, evento: result[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/calendario/deletar', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { id } = req.body;
+    await sql`DELETE FROM calendario_eventos WHERE id = ${id}`;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Buscar eventos de uma semana específica (para o planejamento)
+app.get('/api/calendario/semana/:inicio/:fim', async (req, res) => {
+  try {
+    const sql = getDB();
+    const { inicio, fim } = req.params;
+    const result = await sql`
+      SELECT * FROM calendario_eventos
+      WHERE data BETWEEN ${inicio} AND ${fim}
+      ORDER BY data
+    `;
+    res.json({ eventos: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
