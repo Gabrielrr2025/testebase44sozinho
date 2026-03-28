@@ -79,6 +79,14 @@ export const base44 = {
           return post('relatorio/movimento', params);
         case 'Getproductcomparison':
           return post('relatorio/comparacao', params);
+        case 'getPedidos':
+          return get('pedidos');
+        case 'getPedido':
+          return get(`pedidos/${params.id}`);
+        case 'emitirPedido':
+          return post('pedidos/emitir', params);
+        case 'getPedidoSemana':
+          return get(`pedidos/semana/${params.inicio}/${params.fim}`);
         case 'getCurrentWeek':
           return get('semana/atual');
         case 'inspectDB':
