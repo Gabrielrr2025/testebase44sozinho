@@ -79,6 +79,14 @@ export default function Calendar() {
     try { return getYear(parseISO(e.data)) === currentYear; } catch { return false; }
   });
 
+  // Feriados municipais/estaduais fixos de Itaperuna/RJ
+  const getFeriadosRegionais = (year) => [
+    { nome: 'São José (Padroeiro)', data: `${year}-03-19`, tipo: 'Feriado Regional', fonte: 'municipal' },
+    { nome: 'São Jorge', data: `${year}-04-23`, tipo: 'Feriado Regional', fonte: 'estadual' },
+    { nome: 'Aniversário de Itaperuna', data: `${year}-05-10`, tipo: 'Feriado Regional', fonte: 'municipal' },
+    { nome: 'Consciência Negra', data: `${year}-11-20`, tipo: 'Feriado Regional', fonte: 'estadual' },
+  ];
+
   const loadHolidays = async (silent = false) => {
     setLoadingHolidays(true);
     if (!silent) toast.info('Consultando APIs de feriados...');
@@ -88,7 +96,7 @@ export default function Calendar() {
         fetchNagerDate(currentYear),
       ]);
 
-      // Deduplicar por data apenas — pega o nome mais curto/simples quando há conflito
+      // Deduplicar nacionais por data — pega o nome mais curto
       const porData = new Map();
       [...brasilapi, ...nager].forEach(h => {
         const existing = porData.get(h.data);
@@ -96,9 +104,14 @@ export default function Calendar() {
           porData.set(h.data, h);
         }
       });
-      const unique = Array.from(porData.values());
+      const nacionais = Array.from(porData.values());
 
-      const novos = unique.filter(h =>
+      // Juntar com regionais fixos
+      const regionais = getFeriadosRegionais(currentYear);
+      const todos = [...nacionais, ...regionais];
+
+      // Filtrar só os que ainda não existem no banco (por data)
+      const novos = todos.filter(h =>
         !allEvents.some(ev => ev.data === h.data)
       );
 
@@ -111,7 +124,7 @@ export default function Calendar() {
       for (const h of novos) {
         const res = await base44.functions.invoke('criarEvento', {
           nome: h.nome, data: h.data, tipo: h.tipo,
-          impacto_pct: 10, // padrão 10% para feriados
+          impacto_pct: 10,
           setores: ['Todos'],
           notas: `Importado via ${h.fonte}`, fonte: h.fonte,
         });
