@@ -536,14 +536,14 @@ export default function Planning() {
           <Button variant="outline" size="sm" onClick={handleExportPDF}>
             <FileText className="w-4 h-4 mr-2" />PDF
           </Button>
-          {!pedidoEmitido && (
+          {(!pedidoEmitido || isUnlocked) && (
             <Button
               size="sm"
               onClick={() => setShowEmitirDialog(true)}
               className="bg-green-600 hover:bg-green-700 text-white"
             >
               <ClipboardList className="w-4 h-4 mr-2" />
-              Emitir Pedido
+              {pedidoEmitido && isUnlocked ? 'Novo Pedido' : 'Emitir Pedido'}
             </Button>
           )}
         </div>
@@ -741,9 +741,11 @@ export default function Planning() {
       <Dialog open={showEmitirDialog} onOpenChange={setShowEmitirDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Emitir Pedido de Produção</DialogTitle>
+            <DialogTitle>{pedidoEmitido && isUnlocked ? 'Emitir Novo Pedido' : 'Emitir Pedido de Produção'}</DialogTitle>
             <DialogDescription>
-              Isso vai gerar um número único para o pedido e bloquear a semana para edição.
+              {pedidoEmitido && isUnlocked
+                ? `Já existe o pedido ${pedidoEmitido.numero} para esta semana. Um novo número será gerado.`
+                : 'Isso vai gerar um número único para o pedido e bloquear a semana para edição.'}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-3">
@@ -758,9 +760,15 @@ export default function Planning() {
                 <span className="text-slate-600">Produtos:</span>
                 <span className="font-semibold">{filteredPlanning.length}</span>
               </div>
+              {pedidoEmitido && isUnlocked && (
+                <div className="flex justify-between mt-1">
+                  <span className="text-slate-600">Pedido anterior:</span>
+                  <span className="font-semibold text-slate-500">{pedidoEmitido.numero}</span>
+                </div>
+              )}
             </div>
             <p className="text-xs text-amber-600 bg-amber-50 p-3 rounded-lg">
-              ⚠️ Após emitir, a semana ficará bloqueada. Para editar, será necessário a senha de configuração.
+              ⚠️ Após emitir, a semana ficará bloqueada novamente. Para editar, será necessário a senha de configuração.
             </p>
           </div>
           <DialogFooter>
