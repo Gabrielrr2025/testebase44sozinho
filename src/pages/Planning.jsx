@@ -808,6 +808,52 @@ export default function Planning() {
                     </div>
                   </div>
 
+                  {/* Eventos do calendário na semana */}
+                  {((selectedProduct.eventos_semana && selectedProduct.eventos_semana.length > 0) ||
+                    (selectedProduct.eventos_semana_info && selectedProduct.eventos_semana_info.length > 0)) && (
+                    <div className="border-t pt-3 mt-1">
+                      <h4 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
+                        <CalendarDays className="w-4 h-4 text-purple-500" />
+                        Eventos na semana
+                      </h4>
+                      <div className="space-y-2">
+                        {selectedProduct.eventos_semana?.map((ev, idx) => {
+                          const positivo = parseFloat(ev.impacto_pct) > 0;
+                          return (
+                            <div key={idx} className={}>
+                              <div className="flex items-center justify-between">
+                                <span className={}>
+                                  {ev.nome}
+                                </span>
+                                <span className={}>
+                                  {positivo ? '+' : ''}{ev.impacto_pct}%
+                                </span>
+                              </div>
+                              <div className={}>
+                                {ev.data}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {selectedProduct.eventos_semana_info?.map((ev, idx) => (
+                          <div key={idx} className="rounded-lg px-3 py-2 border border-slate-200 bg-slate-50 text-xs">
+                            <span className="font-semibold text-slate-700">{ev.nome}</span>
+                            <div className="text-[10px] text-slate-400 mt-0.5">{ev.data} · informativo</div>
+                          </div>
+                        ))}
+                        {selectedProduct.multiplicador_calendario && selectedProduct.multiplicador_calendario !== 1 && (
+                          <div className={}>
+                            <span>Impacto total na sugestão:</span>
+                            <span className="font-bold">
+                              {selectedProduct.multiplicador_calendario >= 1 ? '+' : ''}
+                              {((selectedProduct.multiplicador_calendario - 1) * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
                     <div className="flex items-center gap-1.5 mb-2">
                       <Lightbulb className="w-4 h-4 text-blue-600" />
@@ -816,6 +862,11 @@ export default function Planning() {
                     <p className="text-xs text-blue-800 mb-2">{selectedProduct.suggestion}</p>
                     <div className="text-xs text-blue-700 font-bold mb-3">
                       Total sugerido: {selectedProduct.suggested_production} {selectedProduct.unidade}/semana
+                      {selectedProduct.multiplicador_calendario && selectedProduct.multiplicador_calendario !== 1 && (
+                        <span className="ml-1 text-slate-400 font-normal line-through">
+                          (base: {selectedProduct.suggested_production_base})
+                        </span>
+                      )}
                     </div>
                     <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700" onClick={handleApplySuggestion}>
                       Aplicar Sugestão
