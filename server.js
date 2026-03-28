@@ -458,8 +458,14 @@ app.get('/api/semana/atual', (req, res) => {
 app.get('/api/config', async (req, res) => {
   try {
     const sql = getDB();
-    const result = await sql`SELECT * FROM configuracoes LIMIT 1`;
-    res.json(result[0] || { valor: '1234' });
+    const { chave } = req.query;
+    if (chave) {
+      const result = await sql`SELECT * FROM configuracoes WHERE chave = ${chave} LIMIT 1`;
+      res.json(result[0] || { chave, valor: '1234' });
+    } else {
+      const result = await sql`SELECT * FROM configuracoes`;
+      res.json(result);
+    }
   } catch (err) {
     res.json({ valor: '1234' });
   }
@@ -468,10 +474,10 @@ app.get('/api/config', async (req, res) => {
 app.post('/api/config/salvar', async (req, res) => {
   try {
     const sql = getDB();
-    const dados = req.body;
+    const { chave, valor } = req.body;
     await sql`
-      INSERT INTO configuracoes (dados, atualizado_em) VALUES (${JSON.stringify(dados)}, NOW())
-      ON CONFLICT (id) DO UPDATE SET dados = ${JSON.stringify(dados)}, atualizado_em = NOW()
+      INSERT INTO configuracoes (chave, valor, updated_at) VALUES (${chave}, ${valor}, NOW())
+      ON CONFLICT (chave) DO UPDATE SET valor = ${valor}, updated_at = NOW()
     `;
     res.json({ success: true });
   } catch (err) {
